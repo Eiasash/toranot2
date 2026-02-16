@@ -7,6 +7,8 @@ import {
 } from "react";
 import type { PatientEntry, Section, Task } from "../types";
 import { parsePatientList } from "../parser/parsePatientList";
+import { mergeScan } from "../engine/mergeScan";
+import { generateId } from "../utils/id";
 
 // State
 interface PatientsState {
@@ -24,6 +26,7 @@ type Action =
   | { type: "IMPORT_TEXT"; text: string }
   | { type: "SET_SECTION"; section: Section }
   | { type: "TOGGLE_TASK"; patientId: string; taskId: string }
+  | { type: "ADD_TASK"; patientId: string; text: string }
   | { type: "CLEAR_ALL" };
 
 function toggleTaskInList(tasks: Task[], taskId: string): Task[] {
@@ -42,7 +45,7 @@ function reducer(state: PatientsState, action: Action): PatientsState {
   switch (action.type) {
     case "IMPORT_TEXT": {
       const parsed = parsePatientList(action.text);
-      return { ...state, patients: [...state.patients, ...parsed] };
+      return { ...state, patients: mergeScan(state.patients, parsed) };
     }
     case "SET_SECTION":
       return { ...state, activeSection: action.section };
@@ -58,6 +61,30 @@ function reducer(state: PatientsState, action: Action): PatientsState {
                   p.generatedTasks,
                   action.taskId,
                 ),
+              }
+            : p,
+        ),
+      };
+    case "ADD_TASK":
+      return {
+        ...state,
+        patients: state.patients.map((p) =>
+          p.id === action.patientId
+            ? {
+                ...p,
+                tasks: [
+                  ...p.tasks,
+                  {
+                    id: generateId("manual-"),
+                    text: action.text,
+                    urgency: "routine",
+                    source: "manual",
+                    done: false,
+                    doneTime: null,
+                    time: null,
+                    confidence: 1,
+                  },
+                ],
               }
             : p,
         ),

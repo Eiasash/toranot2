@@ -7,6 +7,8 @@ export {
 export type {
   Section,
   Urgency,
+  TaskCategory,
+  TaskSource,
   Task,
   PatientEntry,
 } from "./patient";

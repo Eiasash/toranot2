@@ -13,10 +13,23 @@ export const SECTION_LABEL: Record<Section, string> = {
 
 export type Urgency = "stat" | "urgent" | "morning" | "routine";
 
+export type TaskCategory =
+  | "labs"
+  | "imaging"
+  | "meds"
+  | "consult"
+  | "procedure"
+  | "discharge"
+  | "other";
+
+export type TaskSource = "extracted" | "manual" | "generated";
+
 export type Task = {
   id: string;
   text: string;          // exact text as written
   urgency: Urgency;
+  category?: TaskCategory;
+  source: TaskSource;
   done: boolean;
   doneTime: string | null; // ISO string or null
   time: string | null;     // "16:30" if present, else null
