@@ -16,13 +16,12 @@ const FLAG_COLORS: Record<string, string> = {
 function FlagBadge({ flag }: { flag: string }) {
   const color = FLAG_COLORS[flag] ?? "bg-gray-500 text-white";
   return (
-    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${color}`}>
+    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${color}`}>
       {flag}
     </span>
   );
 }
 
-// Sort tasks: stat first, then urgent, morning, routine. Undone before done.
 function sortTasks(tasks: import("../types").Task[]) {
   const urgencyOrder = { stat: 0, urgent: 1, morning: 2, routine: 3 };
   return [...tasks].sort((a, b) => {
@@ -39,44 +38,51 @@ export function PatientCard({ patient }: { patient: PatientEntry }) {
   const totalCount = allTasks.length;
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 space-y-3">
-      {/* Header row */}
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 space-y-3">
+      {/* Header */}
       <div className="flex items-start gap-3">
         {patient.room && (
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-600 text-white font-bold text-lg shrink-0">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 text-white font-bold text-lg shrink-0">
             {patient.room}
           </div>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-gray-900">
+            <span className="font-semibold text-gray-900 text-base">
               {patient.name ?? "לא ידוע"}
             </span>
-            {patient.age && (
+            {patient.age != null && (
               <span className="text-sm text-gray-500">{patient.age}</span>
             )}
-            {patient.flags.map((flag) => (
-              <FlagBadge key={flag} flag={flag} />
-            ))}
           </div>
           {patient.diagnosis && (
             <p className="text-sm text-gray-600 mt-0.5">{patient.diagnosis}</p>
           )}
+          {patient.flags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {patient.flags.map((flag) => (
+                <FlagBadge key={flag} flag={flag} />
+              ))}
+            </div>
+          )}
         </div>
         {totalCount > 0 && (
-          <span className="text-xs text-gray-400 shrink-0">
-            {doneCount}/{totalCount}
-          </span>
+          <div className="flex flex-col items-center shrink-0">
+            <span className="text-lg font-bold text-blue-600">
+              {doneCount}/{totalCount}
+            </span>
+            <span className="text-[10px] text-gray-400">משימות</span>
+          </div>
         )}
       </div>
 
-      {/* Status notes */}
+      {/* Status */}
       {patient.status.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {patient.status.map((s, i) => (
             <span
               key={i}
-              className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded"
+              className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg"
             >
               {s}
             </span>
@@ -86,7 +92,7 @@ export function PatientCard({ patient }: { patient: PatientEntry }) {
 
       {/* Tasks */}
       {allTasks.length > 0 && (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           {allTasks.map((task) => (
             <TaskItem
               key={task.id}

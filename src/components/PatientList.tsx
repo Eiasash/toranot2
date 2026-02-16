@@ -8,15 +8,18 @@ export function PatientList() {
 
   if (filtered.length === 0) {
     return (
-      <div className="text-center text-gray-400 py-16">
-        <p className="text-lg">אין חולים ב{SECTION_LABEL[activeSection]}</p>
-        <p className="text-sm mt-1">הדביקו רשימת חולים למעלה כדי להתחיל</p>
+      <div className="flex flex-col items-center justify-center text-gray-400 py-20 px-6">
+        <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} className="mb-3 opacity-40">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6" />
+        </svg>
+        <p className="text-base">אין חולים ב{SECTION_LABEL[activeSection]}</p>
+        <p className="text-sm mt-1">צלמו דף תורן או הדביקו רשימה למעלה</p>
       </div>
     );
   }
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="p-3 space-y-3 pb-6">
       {filtered.map((patient) => (
         <PatientCard key={patient.id} patient={patient} />
       ))}

@@ -6,11 +6,11 @@ import { PatientList } from "./components/PatientList";
 export function App() {
   return (
     <PatientsProvider>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-dvh bg-gray-50 flex flex-col max-w-lg mx-auto">
         {/* Header */}
-        <header className="bg-blue-700 text-white px-4 py-3 shadow-md">
-          <h1 className="text-xl font-bold">תורנות</h1>
-          <p className="text-blue-200 text-sm">ניהול משמרת מחלקתי</p>
+        <header className="bg-blue-700 text-white px-4 py-3 safe-top">
+          <h1 className="text-lg font-bold">תורנות</h1>
+          <p className="text-blue-200 text-xs">ניהול משמרת מחלקתי</p>
         </header>
 
         {/* Input */}
@@ -20,7 +20,7 @@ export function App() {
         <SectionTabs />
 
         {/* Patient List */}
-        <div className="bg-white border-t border-gray-200 min-h-[60vh]">
+        <div className="flex-1 bg-white border-t border-gray-200">
           <PatientList />
         </div>
       </div>

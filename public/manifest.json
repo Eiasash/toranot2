@@ -1,0 +1,10 @@
+{
+  "name": "תורנות",
+  "short_name": "תורנות",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f9fafb",
+  "theme_color": "#1d4ed8",
+  "icons": []
+}
