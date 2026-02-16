@@ -1,4 +1,5 @@
-import { PatientEntry, Section, detectSectionFromHeader } from "../types";
+import type { PatientEntry, Task, TaskCategory } from "../types";
+import { Section, detectSectionFromHeader } from "../types";
 import { generateId } from "../utils/id";
 import { applyRules } from "../engine/rules";
 
@@ -52,6 +53,15 @@ function extractFlags(text: string): { flags: string[]; cleaned: string } {
   return { flags, cleaned: cleaned.trim() };
 }
 
+function classifyTaskCategory(text: string): TaskCategory | undefined {
+  if (/\bCT\b|\bUS\b|דימות|צילום/i.test(text)) return "imaging";
+  if (/ב"ד|בדיקת דם|מעבדה/i.test(text)) return "labs";
+  if (/\bBS\b|Bladder\s*Scan|קטטר|פולי/i.test(text)) return "procedure";
+  if (/שחרור|מכתב שחרור|סיכום/i.test(text)) return "discharge";
+  if (/ייעוץ|שיחה/i.test(text)) return "consult";
+  return undefined;
+}
+
 function parseAge(token: string): number | null {
   const n = parseInt(token, 10);
   return !isNaN(n) && n > 0 && n < 150 ? n : null;
@@ -81,12 +91,24 @@ function parsePatientLine(
   const tokens = cleaned.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return null;
 
-  // First token: room number (if it looks like a number or room code)
+  // First token(s): room/bed code (supports 49-3, 55/1, ניטור-1, ניטור 1, etc.)
   let room: string | null = null;
   let idx = 0;
-  if (/^\d{1,4}[א-ת]?$/.test(tokens[0])) {
+
+  const ROOM_PATTERN =
+    /^(?:\d{1,4}[-/]\d{1,2}|\d{1,4}[א-ת]?|ניטור[-]?\d{1,2}|חדר[-]?\d{1,3})$/;
+
+  if (ROOM_PATTERN.test(tokens[0])) {
     room = tokens[0];
     idx = 1;
+  } else if (
+    /^(?:ניטור|חדר)$/.test(tokens[0]) &&
+    tokens.length > 1 &&
+    /^\d{1,3}$/.test(tokens[1])
+  ) {
+    // Handle "ניטור 1" as two tokens
+    room = `${tokens[0]} ${tokens[1]}`;
+    idx = 2;
   }
 
   // Collect name tokens (Hebrew characters)
@@ -110,13 +132,13 @@ function parsePatientLine(
 
   // Parse extra segments into status and tasks
   const status: string[] = [];
-  const tasks: import("../types").Task[] = [];
+  const tasks: Task[] = [];
 
   for (const part of extraParts) {
     if (!part) continue;
-    // Heuristic: if it contains an action verb or time, treat as task
+    // Heuristic: if it contains an action verb, time, or known shorthand, treat as task
     const isTask =
-      /בדיק|תור |לתת |להזמין|לבצע|למדוד|לשלוח|טיפול|ניקוז|עירוי|צילום|א\.?ק\.?ג/i.test(
+      /(?:בדיק|ב"ד|CT|US|\bBS\b|Bladder\s*Scan|תור |לתת |להזמין|לבצע|למדוד|לשלוח|טיפול|ניקוז|עירוי|צילום|דימות|ייעוץ|שיחה|א\.?ק\.?ג)/i.test(
         part,
       );
     if (isTask) {
@@ -124,6 +146,8 @@ function parsePatientLine(
         id: generateId("task-"),
         text: part,
         urgency: detectUrgency(part),
+        category: classifyTaskCategory(part),
+        source: "extracted",
         done: false,
         doneTime: null,
         time: extractTime(part),

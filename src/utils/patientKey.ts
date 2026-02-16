@@ -4,24 +4,22 @@ function normalize(text: string | null | undefined): string {
     .toLowerCase()
     .trim()
     .replace(/\s+/g, "")
-    // Keep letters/numbers in any language; strip punctuation.
     .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
-/**
- * Strict key: includes section. Use when you want to keep patients separate per section.
- */
+/** Strict key: section + room + name. Keeps patients separate per section. */
 export function buildPatientKey(
   section: string,
   room: string | null,
   name: string | null,
-) {
+): string {
   return `${normalize(section)}|${normalize(room)}|${normalize(name)}`;
 }
 
-/**
- * Loose key: ignores section. Use to detect transfers (Side A -> Rehab, etc.).
- */
-export function buildPatientLooseKey(room: string | null, name: string | null) {
+/** Loose key: room + name only. Detects transfers between sections. */
+export function buildPatientLooseKey(
+  room: string | null,
+  name: string | null,
+): string {
   return `${normalize(room)}|${normalize(name)}`;
 }

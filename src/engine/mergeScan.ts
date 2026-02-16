@@ -2,11 +2,10 @@ import type { PatientEntry, Task } from "../types";
 import { buildPatientKey, buildPatientLooseKey } from "../utils/patientKey";
 
 function sameTask(a: Task, b: Task): boolean {
-  return a.text.trim() === b.text.trim() && (a.source === b.source || a.source === "extracted" || b.source === "extracted");
+  return a.text.trim() === b.text.trim();
 }
 
 function mergeTaskState(oldTask: Task, newTask: Task): Task {
-  // Preserve completion state across re-scans.
   return {
     ...newTask,
     done: oldTask.done,
@@ -15,15 +14,15 @@ function mergeTaskState(oldTask: Task, newTask: Task): Task {
 }
 
 function mergePatient(oldP: PatientEntry, newP: PatientEntry): PatientEntry {
-  const now = new Date().toISOString();
-
-  // Merge extracted tasks: keep done state
+  // Merge extracted tasks: preserve done state from previous scan
   const mergedExtracted: Task[] = newP.tasks.map((nt) => {
-    const match = oldP.tasks.find((ot) => sameTask(ot, nt));
+    const match = oldP.tasks.find(
+      (ot) => ot.source === "extracted" && sameTask(ot, nt),
+    );
     return match ? mergeTaskState(match, nt) : nt;
   });
 
-  // Keep manual tasks from old that are not present in the new extracted list
+  // Keep manual tasks from the old entry — never delete them automatically
   const manualKeep = oldP.tasks.filter(
     (t) => t.source === "manual" && !mergedExtracted.some((nt) => sameTask(nt, t)),
   );
@@ -36,10 +35,7 @@ function mergePatient(oldP: PatientEntry, newP: PatientEntry): PatientEntry {
 
   return {
     ...newP,
-    id: oldP.id, // stable
-    createdAt: oldP.createdAt,
-    updatedAt: now,
-    scanCount: (oldP.scanCount ?? 1) + 1,
+    id: oldP.id,
     scannedAt: newP.scannedAt,
     tasks: [...mergedExtracted, ...manualKeep],
     generatedTasks: mergedGenerated,
@@ -50,12 +46,15 @@ function mergePatient(oldP: PatientEntry, newP: PatientEntry): PatientEntry {
  * Merge a newly parsed scan into existing state.
  *
  * Guarantees:
- * - No duplicate patients (stable key)
+ * - No duplicate patients (stable key based on section + room + name)
  * - Preserves manual tasks
- * - Preserves done state for extracted + generated tasks
- * - Detects transfers between sections (same room+name)
+ * - Preserves done/doneTime for extracted + generated tasks
+ * - Detects transfers between sections via loose key (room + name)
  */
-export function mergeScan(existing: PatientEntry[], incoming: PatientEntry[]) {
+export function mergeScan(
+  existing: PatientEntry[],
+  incoming: PatientEntry[],
+): PatientEntry[] {
   const existingByStrict = new Map<string, PatientEntry>();
   const existingByLoose = new Map<string, PatientEntry>();
 
@@ -84,7 +83,7 @@ export function mergeScan(existing: PatientEntry[], incoming: PatientEntry[]) {
     merged.push(mergePatient(match, np));
   }
 
-  // Keep patients that weren't mentioned in the new scan (other sections / not scanned now)
+  // Keep patients that weren't mentioned in the new scan
   for (const p of existing) {
     const key = buildPatientKey(p.section, p.room, p.name);
     if (!consumed.has(key)) merged.push(p);

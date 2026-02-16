@@ -63,6 +63,12 @@ const RULES: Rule[] = [
     ],
   },
   {
+    // BS = Bladder Scan (NOT blood sugar). Matches "BS", "BS בערב", "Bladder Scan", etc.
+    trigger: /\bBS\b|Bladder\s*Scan|בלדר\s*סקאן|סריקה\s*של\s*שלפוחית/i,
+    source: "BS (Bladder Scan)",
+    tasks: [{ text: "BS (Bladder Scan)", urgency: "routine" }],
+  },
+  {
     trigger: /בידוד|ISO|MRSA|VRE|ESBL/i,
     source: "בידוד",
     tasks: [
@@ -86,6 +92,7 @@ export function applyRules(patient: PatientEntry): Task[] {
     ...patient.status,
     ...patient.flags,
     patient.diagnosis ?? "",
+    ...patient.tasks.map((t) => t.text),
   ].join(" ");
 
   for (const rule of RULES) {
@@ -95,6 +102,7 @@ export function applyRules(patient: PatientEntry): Task[] {
           id: generateId("gen-"),
           text: taskDef.text,
           urgency: taskDef.urgency,
+          source: "generated",
           done: false,
           doneTime: null,
           time: null,
