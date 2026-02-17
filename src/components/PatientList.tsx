@@ -1,6 +1,6 @@
 import { usePatientsState } from "../context/PatientsContext";
 import { SECTION_LABEL } from "../types";
-import { PatientCard } from "./PatientCard";
+import { PatientCard, PatientRow } from "./PatientCard";
 
 export function PatientList() {
   const { patients, activeSection } = usePatientsState();
@@ -19,10 +19,34 @@ export function PatientList() {
   }
 
   return (
-    <div className="p-3 space-y-3 pb-6">
-      {filtered.map((patient) => (
-        <PatientCard key={patient.id} patient={patient} />
-      ))}
-    </div>
+    <>
+      {/* Mobile: full-width cards */}
+      <div className="lg:hidden space-y-2 p-2 pb-6">
+        {filtered.map((patient) => (
+          <PatientCard key={patient.id} patient={patient} />
+        ))}
+      </div>
+
+      {/* Desktop: table view */}
+      <div className="hidden lg:block">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 text-gray-500 text-xs bg-gray-50">
+              <th className="py-2.5 px-4 text-right font-medium w-20">חדר</th>
+              <th className="py-2.5 px-4 text-right font-medium">שם</th>
+              <th className="py-2.5 px-4 text-right font-medium w-16">גיל</th>
+              <th className="py-2.5 px-4 text-right font-medium">אבחנה</th>
+              <th className="py-2.5 px-4 text-right font-medium w-40">דגלים</th>
+              <th className="py-2.5 px-4 text-center font-medium w-20">משימות</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((patient) => (
+              <PatientRow key={patient.id} patient={patient} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
