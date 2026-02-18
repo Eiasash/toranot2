@@ -8,7 +8,8 @@ interface ScannerProps {
 type ScanState =
   | { step: "idle" }
   | { step: "preview"; imageUrl: string; file: File }
-  | { step: "scanning"; imageUrl: string }
+  | { step: "batchPreview"; items: Array<{ imageUrl: string; file: File }> }
+  | { step: "scanning"; imageUrl: string; progress?: { current: number; total: number } }
   | { step: "done"; imageUrl: string; text: string }
   | { step: "error"; message: string };
 
@@ -29,6 +30,9 @@ Rules:
 - tasks_and_notes: any tasks, tomorrow notes, special instructions
 - Use | to separate segments. If a segment is empty, omit it.
 - Output section headers exactly as: צד א / צד ב / צד ג / שיקום / ניטור
+- ALWAYS include section headers and group patients under the correct header.
+- If the image contains multiple sections, output each section separately with its header.
+- If you are unsure which section a patient belongs to, put them under the closest matching header visible on the page; if none is visible, put them under צד א.
 - Output ONLY the structured text, no explanations, no markdown`;
 
 async function runClaudeOCR(file: File, apiKey: string): Promise<string> {
@@ -168,15 +172,25 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
   const galleryRef = useRef<HTMLInputElement>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setState({ step: "preview", imageUrl: URL.createObjectURL(file), file });
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    // Single image flow
+    if (files.length === 1) {
+      const file = files[0];
+      setState({ step: "preview", imageUrl: URL.createObjectURL(file), file });
+      return;
+    }
+
+    // Batch flow (gallery upload supports multiple)
+    const items = files.map((file) => ({ file, imageUrl: URL.createObjectURL(file) }));
+    setState({ step: "batchPreview", items });
   }
 
-  async function runOcr(file: File, imageUrl: string) {
+  async function runOcr(file: File, imageUrl: string, progress?: { current: number; total: number }) {
     const apiKey = getStoredKey();
     if (!apiKey) { setShowKeySetup(true); return; }
-    setState({ step: "scanning", imageUrl });
+    setState({ step: "scanning", imageUrl, progress });
     try {
       const text = await runClaudeOCR(file, apiKey);
       setState({ step: "done", imageUrl, text });
@@ -190,13 +204,87 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
     }
   }
 
+  function normalizeAndGroupBySection(rawText: string): string {
+    const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const sections: Array<{ header: string; items: string[] }> = [
+      { header: "צד א", items: [] },
+      { header: "צד ב", items: [] },
+      { header: "צד ג", items: [] },
+      { header: "שיקום", items: [] },
+      { header: "ניטור", items: [] },
+    ];
+
+    function matchHeader(line: string): number | null {
+      const t = line.replace(/\s+/g, "");
+      if (t.includes("צדא")) return 0;
+      if (t.includes("צדב")) return 1;
+      if (t.includes("צדג")) return 2;
+      if (t.includes("שיקום")) return 3;
+      if (t.includes("ניטור") || t.includes("מוניטור")) return 4;
+      return null;
+    }
+
+    let current = 0;
+    for (const line of lines) {
+      const h = matchHeader(line);
+      if (h !== null) { current = h; continue; }
+      sections[current].items.push(line);
+    }
+
+    // Rebuild with headers only for non-empty sections
+    const out: string[] = [];
+    for (const s of sections) {
+      if (s.items.length === 0) continue;
+      out.push(s.header);
+      out.push(...s.items);
+      out.push("");
+    }
+    return out.join("\n").trim();
+  }
+
+  async function runOcrBatch(items: Array<{ file: File; imageUrl: string }>) {
+    const apiKey = getStoredKey();
+    if (!apiKey) { setShowKeySetup(true); return; }
+
+    const texts: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const { file, imageUrl } = items[i];
+      setState({ step: "scanning", imageUrl, progress: { current: i + 1, total: items.length } });
+      try {
+        const text = await runClaudeOCR(file, apiKey);
+        texts.push(text);
+      } catch (err) {
+        // Clean up URLs before showing error
+        for (const it of items) URL.revokeObjectURL(it.imageUrl);
+        const raw = err instanceof Error ? err.message : String(err);
+        const msg = raw === "Failed to fetch"
+          ? "חיבור נכשל. בדוק חיבור לאינטרנט ושה-API Key תקין."
+          : raw;
+        setState({ step: "error", message: msg });
+        return;
+      }
+      URL.revokeObjectURL(imageUrl);
+    }
+
+    const merged = normalizeAndGroupBySection(texts.join("\n"));
+    // Show merged text for optional editing before import
+    // Use the first image as thumbnail
+    const thumb = items[0]?.imageUrl ?? "";
+    setState({ step: "done", imageUrl: thumb, text: merged });
+  }
+
   function handleUseText(text: string) {
     onTextExtracted(text);
     cleanup();
   }
 
   function cleanup() {
-    if (state.step !== "idle" && "imageUrl" in state) URL.revokeObjectURL(state.imageUrl);
+    if (state.step === "preview" || state.step === "scanning" || state.step === "done") {
+      if ("imageUrl" in state) URL.revokeObjectURL((state as any).imageUrl);
+    }
+    if (state.step === "batchPreview") {
+      for (const it of state.items) URL.revokeObjectURL(it.imageUrl);
+    }
     setState({ step: "idle" });
     if (cameraRef.current) cameraRef.current.value = "";
     if (galleryRef.current) galleryRef.current.value = "";
@@ -219,7 +307,7 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
           className="flex items-center justify-center gap-3 w-full py-4 bg-gray-100 text-gray-700 rounded-xl text-base font-medium active:bg-gray-200 active:scale-[0.98] transition-transform">
           <GalleryIcon size={22} /> בחר תמונה מהגלריה
         </button>
-        <input ref={galleryRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+        <input ref={galleryRef} type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
 
         <div className="flex items-center justify-between">
           <button onClick={onCancel} className="text-sm text-gray-400 py-2 px-2 active:text-gray-600">ביטול</button>
@@ -244,6 +332,36 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
     );
   }
 
+
+  if (state.step === "batchPreview") {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="text-sm text-gray-600">
+          נבחרו <span className="font-medium">{state.items.length}</span> דפים לסריקה.
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {state.items.slice(0, 6).map((it, idx) => (
+            <img key={idx} src={it.imageUrl} alt={`דף ${idx + 1}`} className="w-full h-20 rounded-lg border border-gray-200 object-cover bg-gray-50" />
+          ))}
+          {state.items.length > 6 && (
+            <div className="w-full h-20 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center text-xs text-gray-500">
+              +{state.items.length - 6}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => runOcrBatch(state.items)}
+          className="flex items-center justify-center gap-2 w-full py-4 bg-blue-600 text-white rounded-xl text-lg font-medium active:bg-blue-700 active:scale-[0.98] transition-transform"
+        >
+          <ScanIcon size={22} /> סרוק הכל
+        </button>
+        <button onClick={cleanup} className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl text-base font-medium active:bg-gray-200">
+          ביטול
+        </button>
+      </div>
+    );
+  }
+
   if (state.step === "scanning") {
     return (
       <div className="flex flex-col gap-4 items-center py-6">
@@ -252,6 +370,9 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
           <Spinner /> <span>Claude Vision קורא את הדף...</span>
         </div>
         <p className="text-xs text-gray-400">בדרך כלל 5–10 שניות</p>
+        {"progress" in state && state.progress && (
+          <p className="text-xs text-gray-500">{state.progress.current}/{state.progress.total}</p>
+        )}
       </div>
     );
   }
@@ -282,7 +403,7 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
       </div>
       <textarea
         value={(state as { text: string }).text}
-        onChange={(e) => setState({ ...state as Extract<ScanState, {step:"done"}>, text: e.target.value })}
+        onChange={(e) => setState({ ...(state as Extract<ScanState, { step: "done" }>), text: e.target.value })}
         dir="auto"
         rows={8}
         style={{ unicodeBidi: "plaintext" }}
@@ -301,7 +422,6 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
       </div>
     </div>
   );
-}
 
 function CameraIcon({ size = 24 }: { size?: number }) {
   return (
@@ -334,4 +454,5 @@ function Spinner() {
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
   );
+}
 }

@@ -1,7 +1,7 @@
 // Single source of truth for your top-level navigation sections.
 // "Rehab" is NOT a filter. It's its own section.
 
-export const SECTIONS = ["SIDE_A", "SIDE_B", "SIDE_C", "REHAB"] as const;
+export const SECTIONS = ["SIDE_A", "SIDE_B", "SIDE_C", "REHAB", "MONITOR"] as const;
 export type Section = (typeof SECTIONS)[number];
 
 export const SECTION_LABEL: Record<Section, string> = {
@@ -9,6 +9,7 @@ export const SECTION_LABEL: Record<Section, string> = {
   SIDE_B: "צד ב",
   SIDE_C: "צד ג",
   REHAB: "שיקום",
+  MONITOR: "ניטור",
 };
 
 export type Urgency = "stat" | "urgent" | "morning" | "routine";
@@ -39,7 +40,7 @@ export type Task = {
 
 export type PatientEntry = {
   id: string;             // stable key (room+name hash)
-  section: Section;       // SIDE_A / SIDE_B / SIDE_C / REHAB
+  section: Section;       // SIDE_A / SIDE_B / SIDE_C / REHAB / MONITOR
   date: string;           // "DD/MM/YYYY"
   room: string | null;
   name: string | null;
@@ -62,5 +63,6 @@ export function detectSectionFromHeader(headerText: string): Section | null {
   if (t.includes("צדב")) return "SIDE_B";
   if (t.includes("צדג")) return "SIDE_C";
   if (t.includes("שיקום")) return "REHAB";
+  if (t.includes("ניטור") || t.includes("מוניטור") || t.includes("מונ") ) return "MONITOR";
   return null;
 }
