@@ -10,7 +10,10 @@ createRoot(document.getElementById("root")!).render(
 );
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(
-    import.meta.env.BASE_URL + "sw.js",
-  );
+  const baseUrl = import.meta.env.BASE_URL || "/";
+  navigator.serviceWorker.register(baseUrl + "sw.js", {
+    scope: baseUrl,
+  }).catch((error) => {
+    console.warn("Service worker registration failed:", error);
+  });
 }
