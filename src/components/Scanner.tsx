@@ -45,6 +45,7 @@ async function runClaudeOCR(file: File, apiKey: string): Promise<string> {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
       model: "claude-opus-4-5",
@@ -163,7 +164,11 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
       setState({ step: "done", imageUrl, text });
     } catch (err) {
       URL.revokeObjectURL(imageUrl);
-      setState({ step: "error", message: err instanceof Error ? err.message : "שגיאה לא ידועה" });
+      const raw = err instanceof Error ? err.message : String(err);
+      const msg = raw === "Failed to fetch"
+        ? "חיבור נכשל. בדוק חיבור לאינטרנט ושה-API Key תקין."
+        : raw;
+      setState({ step: "error", message: msg });
     }
   }
 
