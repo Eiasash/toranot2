@@ -91,10 +91,11 @@ export function InputArea() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={PLACEHOLDER}
-        dir="rtl"
+        dir="auto"
         rows={8}
         autoFocus
-        className="w-full p-3 border border-gray-300 rounded-xl text-sm leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
+        style={{ unicodeBidi: "plaintext" }}
+        className="w-full p-3 border border-gray-300 rounded-xl text-base leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none whitespace-pre-wrap break-words"
       />
       <button
         onClick={() => handleImport()}

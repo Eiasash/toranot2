@@ -216,9 +216,10 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
       <textarea
         value={state.text}
         onChange={(e) => setState({ ...state, text: e.target.value })}
-        dir="rtl"
+        dir="auto"
         rows={8}
-        className="w-full p-3 border border-gray-300 rounded-xl text-sm leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
+        style={{ unicodeBidi: "plaintext" }}
+        className="w-full p-3 border border-gray-300 rounded-xl text-base leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none whitespace-pre-wrap break-words"
       />
       <button
         onClick={() => handleUseText(state.text)}
