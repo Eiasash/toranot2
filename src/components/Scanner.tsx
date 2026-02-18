@@ -284,9 +284,9 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
         value={(state as { text: string }).text}
         onChange={(e) => setState({ ...state as Extract<ScanState, {step:"done"}>, text: e.target.value })}
         dir="auto"
-        rows={10}
+        rows={8}
         style={{ unicodeBidi: "plaintext" }}
-        className="w-full p-3 border border-gray-300 rounded-xl text-base leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 outline-none whitespace-pre-wrap break-words font-mono"
+        className="w-full p-3 border border-gray-300 rounded-xl text-base leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 outline-none whitespace-pre-wrap break-words font-mono max-h-[40vh]"
       />
       <button
         onClick={() => handleUseText((state as { text: string }).text)}

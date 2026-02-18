@@ -11,7 +11,7 @@ export function SectionTabs() {
 
   return (
     <nav className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
-      <div className="lg:max-w-6xl lg:mx-auto flex overflow-x-auto">
+      <div className="lg:max-w-6xl lg:mx-auto flex overflow-x-auto flex-nowrap scrollbar-hide">
         {SECTIONS.map((section) => {
           const count = countForSection(section);
           const isActive = section === activeSection;
@@ -20,7 +20,7 @@ export function SectionTabs() {
               key={section}
               onClick={() => dispatch({ type: "SET_SECTION", section })}
               className={`
-                flex-1 min-w-[25%] py-3 px-2 text-sm font-medium whitespace-nowrap
+                flex-none min-w-[80px] py-3 px-4 text-sm font-medium whitespace-nowrap
                 border-b-2 transition-colors
                 ${isActive
                   ? "border-blue-600 text-blue-700"
