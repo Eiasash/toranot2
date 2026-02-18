@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import { createWorker } from "tesseract.js";
 
 interface ScannerProps {
   onTextExtracted: (text: string) => void;
@@ -9,54 +8,162 @@ interface ScannerProps {
 type ScanState =
   | { step: "idle" }
   | { step: "preview"; imageUrl: string; file: File }
-  | { step: "scanning"; imageUrl: string; progress: number }
+  | { step: "scanning"; imageUrl: string }
   | { step: "done"; imageUrl: string; text: string }
   | { step: "error"; message: string };
 
+const STORAGE_KEY = "toranot_anthropic_key";
+
+const OCR_PROMPT = `You are reading a Hebrew geriatrics ward shift sheet (דף תורן גריאטריה).
+The sheet is a table with columns: room/bed (חדר), patient name (שם), age (גיל), diagnosis (אבחנה), status (סטטוס), and tasks/notes (תורן/מחר).
+
+Extract ALL patients from the image. For each patient output ONE line in this exact format:
+{room} {full_name} {age} {diagnosis} | {status_flags} | {tasks_and_notes}
+
+Rules:
+- room: e.g. 57/1, 49-3, ניטור 1, ניטור 3
+- full_name: Hebrew name as written
+- age: number only
+- diagnosis: as written, keep English medical terms (PNEUMONIA, CHF, AKI, SEPTIC SHOCK, BIPAP, etc.)
+- status_flags: DNR, DNI, NPO, BIPAP, ISOLATION, DNR/DNI etc. if present, else omit this segment
+- tasks_and_notes: any tasks, tomorrow notes, special instructions
+- Use | to separate segments. If a segment is empty, omit it.
+- Output section headers exactly as: צד א / צד ב / צד ג / שיקום / ניטור
+- Output ONLY the structured text, no explanations, no markdown`;
+
+async function runClaudeOCR(file: File, apiKey: string): Promise<string> {
+  const base64 = await fileToBase64(file);
+  const mediaType = (file.type?.startsWith("image/") ? file.type : "image/jpeg") as
+    | "image/jpeg"
+    | "image/png"
+    | "image/webp"
+    | "image/gif";
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-opus-4-5",
+      max_tokens: 2048,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+            { type: "text", text: OCR_PROMPT },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(err.error?.message || `API error ${response.status}`);
+  }
+
+  const data = await response.json() as { content: Array<{ type: string; text?: string }> };
+  return data.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("\n");
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function getStoredKey(): string {
+  try { return localStorage.getItem(STORAGE_KEY) || ""; } catch { return ""; }
+}
+function saveKey(key: string) {
+  try { localStorage.setItem(STORAGE_KEY, key); } catch { /* ignore */ }
+}
+
+function ApiKeySetup({ onSaved }: { onSaved: () => void }) {
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+
+  function handleSave() {
+    const trimmed = key.trim();
+    if (!trimmed.startsWith("sk-ant-")) {
+      setError("המפתח צריך להתחיל עם sk-ant-");
+      return;
+    }
+    saveKey(trimmed);
+    onSaved();
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-1">
+      <div className="text-center space-y-1">
+        <div className="text-3xl">🔑</div>
+        <p className="font-medium text-gray-800">נדרש מפתח Anthropic API</p>
+        <p className="text-xs text-gray-500 leading-relaxed">
+          הסריקה משתמשת ב-Claude Vision לדיוק מקסימלי בעברית.<br />
+          המפתח נשמר רק על המכשיר שלך.
+        </p>
+      </div>
+      <input
+        type="password"
+        value={key}
+        onChange={(e) => { setKey(e.target.value); setError(""); }}
+        placeholder="sk-ant-api03-..."
+        dir="ltr"
+        className="w-full p-3 border border-gray-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-400 outline-none"
+      />
+      {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+      <a
+        href="https://console.anthropic.com/settings/keys"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-blue-500 text-center underline"
+      >
+        קבל מפתח מ-Anthropic Console
+      </a>
+      <button
+        onClick={handleSave}
+        disabled={!key.trim()}
+        className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium active:bg-blue-700 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        שמור ותמשיך
+      </button>
+    </div>
+  );
+}
+
 export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
   const [state, setState] = useState<ScanState>({ step: "idle" });
+  const [showKeySetup, setShowKeySetup] = useState(!getStoredKey());
+  const [editingKey, setEditingKey] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const imageUrl = URL.createObjectURL(file);
-    setState({ step: "preview", imageUrl, file });
+    setState({ step: "preview", imageUrl: URL.createObjectURL(file), file });
   }
 
   async function runOcr(file: File, imageUrl: string) {
-    setState({ step: "scanning", imageUrl, progress: 0 });
-
+    const apiKey = getStoredKey();
+    if (!apiKey) { setShowKeySetup(true); return; }
+    setState({ step: "scanning", imageUrl });
     try {
-      const worker = await createWorker("heb+eng", undefined, {
-        logger: (m) => {
-          if (m.status === "recognizing text") {
-            setState((prev) =>
-              prev.step === "scanning"
-                ? { ...prev, progress: Math.round(m.progress * 100) }
-                : prev,
-            );
-          }
-        },
-      });
-
-      const {
-        data: { text },
-      } = await worker.recognize(file);
-      await worker.terminate();
-
+      const text = await runClaudeOCR(file, apiKey);
       setState({ step: "done", imageUrl, text });
     } catch (err) {
-      console.error("OCR failed:", err);
       URL.revokeObjectURL(imageUrl);
-      // Common on Android Chrome on GitHub Pages — SharedArrayBuffer not available
-      // without Cross-Origin-Isolation headers. Fall back gracefully.
-      setState({
-        step: "error",
-        message:
-          "הסריקה נכשלה. ייתכן שהדפדפן חוסם הרשאות נדרשות.\nנסה להוסיף את האפליקציה למסך הבית ופתח אותה משם, או השתמש בהדבקת טקסט.",
-      });
+      setState({ step: "error", message: err instanceof Error ? err.message : "שגיאה לא ידועה" });
     }
   }
 
@@ -66,187 +173,112 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
   }
 
   function cleanup() {
-    if (state.step !== "idle" && "imageUrl" in state) {
-      URL.revokeObjectURL(state.imageUrl);
-    }
+    if (state.step !== "idle" && "imageUrl" in state) URL.revokeObjectURL(state.imageUrl);
     setState({ step: "idle" });
     if (cameraRef.current) cameraRef.current.value = "";
     if (galleryRef.current) galleryRef.current.value = "";
   }
 
-  // --- IDLE: show big capture buttons ---
+  if (showKeySetup || editingKey) {
+    return <ApiKeySetup onSaved={() => { setShowKeySetup(false); setEditingKey(false); }} />;
+  }
+
   if (state.step === "idle") {
     return (
       <div className="flex flex-col gap-3">
-        {/* Camera - primary action on mobile */}
-        <button
-          onClick={() => cameraRef.current?.click()}
-          className="flex items-center justify-center gap-3 w-full py-5 bg-emerald-600 text-white rounded-xl text-lg font-medium active:bg-emerald-700 active:scale-[0.98] transition-transform"
-        >
-          <CameraIcon size={28} />
-          צלם דף תורן
+        <button onClick={() => cameraRef.current?.click()}
+          className="flex items-center justify-center gap-3 w-full py-5 bg-emerald-600 text-white rounded-xl text-lg font-medium active:bg-emerald-700 active:scale-[0.98] transition-transform">
+          <CameraIcon size={28} /> צלם דף תורן
         </button>
-        <input
-          ref={cameraRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileChange}
-          className="hidden"
-        />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
 
-        {/* Gallery */}
-        <button
-          onClick={() => galleryRef.current?.click()}
-          className="flex items-center justify-center gap-3 w-full py-4 bg-gray-100 text-gray-700 rounded-xl text-base font-medium active:bg-gray-200 active:scale-[0.98] transition-transform"
-        >
-          <GalleryIcon size={22} />
-          בחר תמונה מהגלריה
+        <button onClick={() => galleryRef.current?.click()}
+          className="flex items-center justify-center gap-3 w-full py-4 bg-gray-100 text-gray-700 rounded-xl text-base font-medium active:bg-gray-200 active:scale-[0.98] transition-transform">
+          <GalleryIcon size={22} /> בחר תמונה מהגלריה
         </button>
-        <input
-          ref={galleryRef}
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          className="hidden"
-        />
+        <input ref={galleryRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
 
-        <button
-          onClick={onCancel}
-          className="text-sm text-gray-400 py-2 active:text-gray-600"
-        >
-          ביטול
-        </button>
+        <div className="flex items-center justify-between">
+          <button onClick={onCancel} className="text-sm text-gray-400 py-2 px-2 active:text-gray-600">ביטול</button>
+          <button onClick={() => setEditingKey(true)} className="text-xs text-gray-300 py-2 px-2 active:text-gray-500">🔑 API Key</button>
+        </div>
       </div>
     );
   }
 
-  // --- PREVIEW: show image + scan button ---
   if (state.step === "preview") {
     return (
       <div className="flex flex-col gap-3">
-        <img
-          src={state.imageUrl}
-          alt="תצוגה מקדימה"
-          className="w-full max-h-[40vh] rounded-xl border border-gray-200 object-contain bg-gray-50"
-        />
-        <button
-          onClick={() => runOcr(state.file, state.imageUrl)}
-          className="flex items-center justify-center gap-2 w-full py-4 bg-blue-600 text-white rounded-xl text-lg font-medium active:bg-blue-700 active:scale-[0.98] transition-transform"
-        >
-          <ScanIcon size={22} />
-          סרוק טקסט
+        <img src={state.imageUrl} alt="תצוגה מקדימה" className="w-full max-h-[40vh] rounded-xl border border-gray-200 object-contain bg-gray-50" />
+        <button onClick={() => runOcr(state.file, state.imageUrl)}
+          className="flex items-center justify-center gap-2 w-full py-4 bg-blue-600 text-white rounded-xl text-lg font-medium active:bg-blue-700 active:scale-[0.98] transition-transform">
+          <ScanIcon size={22} /> סרוק עם Claude Vision
         </button>
-        <button
-          onClick={() => { cleanup(); }}
-          className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl text-base font-medium active:bg-gray-200"
-        >
+        <button onClick={cleanup} className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl text-base font-medium active:bg-gray-200">
           צלם שוב
         </button>
       </div>
     );
   }
 
-  // --- ERROR: OCR failed (e.g. SharedArrayBuffer blocked on GitHub Pages) ---
+  if (state.step === "scanning") {
+    return (
+      <div className="flex flex-col gap-4 items-center py-6">
+        <img src={state.imageUrl} alt="סורק..." className="w-full max-h-[30vh] rounded-xl border border-gray-200 object-contain opacity-50" />
+        <div className="flex items-center gap-3 text-blue-700 font-medium">
+          <Spinner /> <span>Claude Vision קורא את הדף...</span>
+        </div>
+        <p className="text-xs text-gray-400">בדרך כלל 5–10 שניות</p>
+      </div>
+    );
+  }
+
   if (state.step === "error") {
     return (
       <div className="flex flex-col gap-3">
         <div className="flex flex-col items-center gap-3 py-6 px-2 text-center">
-          <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-            <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} className="text-red-600">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-          </div>
-          <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{state.message}</p>
+          <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-2xl">⚠️</div>
+          <p className="text-sm text-gray-700 leading-relaxed">{state.message}</p>
+          <button onClick={() => setEditingKey(true)} className="text-xs text-blue-500 underline">עדכן API Key</button>
         </div>
-        <button
-          onClick={() => setState({ step: "idle" })}
-          className="w-full py-3 bg-emerald-600 text-white rounded-xl text-sm font-medium active:bg-emerald-700"
-        >
-          נסה שוב
-        </button>
-        <button
-          onClick={() => { setState({ step: "idle" }); onCancel(); }}
-          className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium active:bg-gray-200"
-        >
-          עבור להקלדת טקסט
-        </button>
+        <button onClick={() => setState({ step: "idle" })} className="w-full py-3 bg-emerald-600 text-white rounded-xl text-sm font-medium">נסה שוב</button>
+        <button onClick={() => { setState({ step: "idle" }); onCancel(); }} className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">עבור להקלדת טקסט</button>
       </div>
     );
   }
 
-  // --- SCANNING: progress bar ---
-  if (state.step === "scanning") {    return (
-      <div className="flex flex-col gap-4 items-center py-6">
-        <img
-          src={state.imageUrl}
-          alt="סורק..."
-          className="w-full max-h-[30vh] rounded-xl border border-gray-200 object-contain opacity-50"
-        />
-        <div className="w-full space-y-2">
-          <div className="flex items-center justify-center gap-2 text-blue-700 font-medium">
-            <Spinner />
-            סורק טקסט... {state.progress}%
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-3">
-            <div
-              className="bg-blue-600 h-3 rounded-full transition-all duration-300"
-              style={{ width: `${state.progress}%` }}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- DONE: editable text + import ---
+  // done
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-3">
-        <img
-          src={state.imageUrl}
-          alt="תוצאה"
-          className="w-20 h-20 rounded-lg border border-gray-200 object-cover shrink-0"
-        />
+        <img src={(state as { imageUrl: string }).imageUrl} alt="תוצאה" className="w-20 h-20 rounded-lg border border-gray-200 object-cover shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-700 mb-1">טקסט שזוהה:</p>
           <p className="text-xs text-gray-400">ניתן לערוך לפני הייבוא</p>
         </div>
       </div>
       <textarea
-        value={state.text}
-        onChange={(e) => setState({ ...state, text: e.target.value })}
+        value={(state as { text: string }).text}
+        onChange={(e) => setState({ ...state as Extract<ScanState, {step:"done"}>, text: e.target.value })}
         dir="auto"
-        rows={8}
+        rows={10}
         style={{ unicodeBidi: "plaintext" }}
-        className="w-full p-3 border border-gray-300 rounded-xl text-base leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none whitespace-pre-wrap break-words"
+        className="w-full p-3 border border-gray-300 rounded-xl text-base leading-relaxed resize-y focus:ring-2 focus:ring-blue-400 outline-none whitespace-pre-wrap break-words font-mono"
       />
       <button
-        onClick={() => handleUseText(state.text)}
-        disabled={!state.text.trim()}
+        onClick={() => handleUseText((state as { text: string }).text)}
+        disabled={!(state as { text: string }).text.trim()}
         className="w-full py-4 bg-blue-600 text-white rounded-xl text-lg font-medium active:bg-blue-700 active:scale-[0.98] transition-transform disabled:opacity-40 disabled:pointer-events-none"
       >
         ייבוא רשימה
       </button>
       <div className="flex gap-2">
-        <button
-          onClick={() => { cleanup(); }}
-          className="flex-1 py-3 bg-amber-100 text-amber-800 rounded-xl text-sm font-medium active:bg-amber-200"
-        >
-          סרוק שוב
-        </button>
-        <button
-          onClick={() => { cleanup(); onCancel(); }}
-          className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium active:bg-gray-200"
-        >
-          ביטול
-        </button>
+        <button onClick={cleanup} className="flex-1 py-3 bg-amber-100 text-amber-800 rounded-xl text-sm font-medium">סרוק שוב</button>
+        <button onClick={() => { cleanup(); onCancel(); }} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">ביטול</button>
       </div>
     </div>
   );
 }
-
-// --- Inline SVG icons ---
 
 function CameraIcon({ size = 24 }: { size?: number }) {
   return (
@@ -256,7 +288,6 @@ function CameraIcon({ size = 24 }: { size?: number }) {
     </svg>
   );
 }
-
 function GalleryIcon({ size = 24 }: { size?: number }) {
   return (
     <svg width={size} height={size} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -266,7 +297,6 @@ function GalleryIcon({ size = 24 }: { size?: number }) {
     </svg>
   );
 }
-
 function ScanIcon({ size = 24 }: { size?: number }) {
   return (
     <svg width={size} height={size} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -274,7 +304,6 @@ function ScanIcon({ size = 24 }: { size?: number }) {
     </svg>
   );
 }
-
 function Spinner() {
   return (
     <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
