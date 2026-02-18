@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useReducer,
+  useEffect,
   type ReactNode,
   type Dispatch,
 } from "react";
@@ -16,8 +17,17 @@ interface PatientsState {
   activeSection: Section;
 }
 
+function loadSavedPatients(): PatientEntry[] {
+  try {
+    const raw = localStorage.getItem("toranot-patients");
+    return raw ? (JSON.parse(raw) as PatientEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 const initialState: PatientsState = {
-  patients: [],
+  patients: loadSavedPatients(),
   activeSection: "SIDE_A",
 };
 
@@ -102,6 +112,15 @@ const PatientsDispatchContext = createContext<Dispatch<Action>>(() => {});
 
 export function PatientsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+
+  // Persist patients to localStorage so data survives Android tab kills
+  useEffect(() => {
+    try {
+      localStorage.setItem("toranot-patients", JSON.stringify(state.patients));
+    } catch {
+      // Storage quota exceeded — ignore
+    }
+  }, [state.patients]);
 
   return (
     <PatientsStateContext.Provider value={state}>

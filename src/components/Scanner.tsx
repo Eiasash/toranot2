@@ -10,7 +10,8 @@ type ScanState =
   | { step: "idle" }
   | { step: "preview"; imageUrl: string; file: File }
   | { step: "scanning"; imageUrl: string; progress: number }
-  | { step: "done"; imageUrl: string; text: string };
+  | { step: "done"; imageUrl: string; text: string }
+  | { step: "error"; message: string };
 
 export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
   const [state, setState] = useState<ScanState>({ step: "idle" });
@@ -27,24 +28,36 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
   async function runOcr(file: File, imageUrl: string) {
     setState({ step: "scanning", imageUrl, progress: 0 });
 
-    const worker = await createWorker("heb+eng", undefined, {
-      logger: (m) => {
-        if (m.status === "recognizing text") {
-          setState((prev) =>
-            prev.step === "scanning"
-              ? { ...prev, progress: Math.round(m.progress * 100) }
-              : prev,
-          );
-        }
-      },
-    });
+    try {
+      const worker = await createWorker("heb+eng", undefined, {
+        logger: (m) => {
+          if (m.status === "recognizing text") {
+            setState((prev) =>
+              prev.step === "scanning"
+                ? { ...prev, progress: Math.round(m.progress * 100) }
+                : prev,
+            );
+          }
+        },
+      });
 
-    const {
-      data: { text },
-    } = await worker.recognize(file);
-    await worker.terminate();
+      const {
+        data: { text },
+      } = await worker.recognize(file);
+      await worker.terminate();
 
-    setState({ step: "done", imageUrl, text });
+      setState({ step: "done", imageUrl, text });
+    } catch (err) {
+      console.error("OCR failed:", err);
+      URL.revokeObjectURL(imageUrl);
+      // Common on Android Chrome on GitHub Pages — SharedArrayBuffer not available
+      // without Cross-Origin-Isolation headers. Fall back gracefully.
+      setState({
+        step: "error",
+        message:
+          "הסריקה נכשלה. ייתכן שהדפדפן חוסם הרשאות נדרשות.\nנסה להוסיף את האפליקציה למסך הבית ופתח אותה משם, או השתמש בהדבקת טקסט.",
+      });
+    }
   }
 
   function handleUseText(text: string) {
@@ -134,9 +147,36 @@ export function Scanner({ onTextExtracted, onCancel }: ScannerProps) {
     );
   }
 
-  // --- SCANNING: progress bar ---
-  if (state.step === "scanning") {
+  // --- ERROR: OCR failed (e.g. SharedArrayBuffer blocked on GitHub Pages) ---
+  if (state.step === "error") {
     return (
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col items-center gap-3 py-6 px-2 text-center">
+          <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+            <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} className="text-red-600">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{state.message}</p>
+        </div>
+        <button
+          onClick={() => setState({ step: "idle" })}
+          className="w-full py-3 bg-emerald-600 text-white rounded-xl text-sm font-medium active:bg-emerald-700"
+        >
+          נסה שוב
+        </button>
+        <button
+          onClick={() => { setState({ step: "idle" }); onCancel(); }}
+          className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium active:bg-gray-200"
+        >
+          עבור להקלדת טקסט
+        </button>
+      </div>
+    );
+  }
+
+  // --- SCANNING: progress bar ---
+  if (state.step === "scanning") {    return (
       <div className="flex flex-col gap-4 items-center py-6">
         <img
           src={state.imageUrl}

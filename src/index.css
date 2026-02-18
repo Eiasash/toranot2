@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
+/* Define the safe-top utility used in header (status bar safe area for Android PWA) */
+@utility safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
 html {
+  /* dvh fallback for older Android Chrome (pre-108) */
+  min-height: 100vh;
+  min-height: 100dvh;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   overscroll-behavior: none;
