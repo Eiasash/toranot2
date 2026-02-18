@@ -99,7 +99,7 @@ export function InputArea() {
       <button
         onClick={() => handleImport()}
         disabled={!text.trim()}
-        className="w-full py-4 bg-blue-600 text-white rounded-xl text-lg font-medium active:bg-blue-700 active:scale-[0.98] transition-transform disabled:opacity-40"
+        className="w-full py-4 bg-blue-600 text-white rounded-xl text-lg font-medium active:bg-blue-700 active:scale-[0.98] transition-transform disabled:opacity-40 disabled:pointer-events-none"
       >
         ייבוא רשימה
       </button>

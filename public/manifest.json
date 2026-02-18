@@ -10,6 +10,8 @@
   "theme_color": "#1d4ed8",
   "dir": "rtl",
   "lang": "he",
+  "categories": ["medical", "productivity", "healthcare"],
+  "display_override": ["window-controls-overlay", "standalone"],
   "icons": [
     {
       "src": "icon-192.png",
