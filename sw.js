@@ -36,18 +36,7 @@ self.addEventListener("fetch", (event) => {
       .then((response) => {
         if (!response || response.status === 0 || response.type === "error") return response;
 
-        // Inject COOP/COEP headers so SharedArrayBuffer (needed by Tesseract.js) works
-        // on GitHub Pages which doesn't serve these headers natively
-        const newHeaders = new Headers(response.headers);
-        newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
-        newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
-        newHeaders.set("Cross-Origin-Resource-Policy", "cross-origin");
-
-        const coiResponse = new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: newHeaders,
-        });
+        const coiResponse = response;
 
         // Cache successful same-origin responses
         if (response.status === 200 && event.request.url.startsWith(self.location.origin)) {
