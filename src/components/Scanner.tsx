@@ -15,25 +15,42 @@ type ScanState =
 
 const STORAGE_KEY = "toranot_anthropic_key";
 
-const OCR_PROMPT = `You are reading a Hebrew geriatrics ward shift sheet (דף תורן גריאטריה).
-The sheet is a table with columns: room/bed (חדר), patient name (שם), age (גיל), diagnosis (אבחנה), status (סטטוס), and tasks/notes (תורן/מחר).
+const OCR_PROMPT = `You are a medical OCR system reading a Hebrew geriatric ward shift sheet (דף תורן גריאטריה / דף מסירת משמרת).
 
-Extract ALL patients from the image. For each patient output ONE line in this exact format:
-{room} {full_name} {age} {diagnosis} | {status_flags} | {tasks_and_notes}
+TASK: Extract every patient row from the image. Output structured text only.
 
-Rules:
-- room: e.g. 57/1, 49-3, ניטור 1, ניטור 3
-- full_name: Hebrew name as written
-- age: number only
-- diagnosis: as written, keep English medical terms (PNEUMONIA, CHF, AKI, SEPTIC SHOCK, BIPAP, etc.)
-- status_flags: DNR, DNI, NPO, BIPAP, ISOLATION, DNR/DNI etc. if present, else omit this segment
-- tasks_and_notes: any tasks, tomorrow notes, special instructions
-- Use | to separate segments. If a segment is empty, omit it.
-- Output section headers exactly as: צד א / צד ב / צד ג / שיקום / ניטור
-- ALWAYS include section headers and group patients under the correct header.
-- If the image contains multiple sections, output each section separately with its header.
-- If you are unsure which section a patient belongs to, put them under the closest matching header visible on the page; if none is visible, put them under צד א.
-- Output ONLY the structured text, no explanations, no markdown`;
+OUTPUT FORMAT — one patient per line:
+{room} {full_name} {age} {diagnosis} {flags} | {status_notes} | {tasks}
+
+FIELD RULES:
+- room: bed/room code as written. Common formats: 57/1, 49-3, 57א, ניטור 1, ניטור-3, חדר 5. If two-digit number alone (e.g. "57") treat as room.
+- full_name: Full Hebrew name exactly as written (2-4 words, Hebrew characters only). Do NOT include room number or age in name.
+- age: integer only (40-110 typical range). If missing, skip.
+- diagnosis: primary diagnosis, keep English medical abbreviations exactly (CHF, AKI, PNEUMONIA, COPD, CVA, UTI, SEPSIS, DM, AF, HTN, GI bleed, PE, DVT, BIPAP, CPAP, etc.)
+- flags: space-separated codes if present inline: DNR DNI NPO FALL ISO MRSA VRE ESBL CDIFF BIPAP CPAP
+
+PIPE SEGMENTS (use | only when segment has content):
+- status_notes: clinical status, ongoing issues, context (e.g. "מחכה לניתוח", "ביום שחרור", "בצקת רגליים", "חום 38.5", "לחץ דם 160/90")
+- tasks: actionable items for this shift (e.g. "תרבית דם", "CT בטן", "ייעוץ קרדיולוג", "a.q.g בבוקר", "בדיקת דם", "מכתב שחרור")
+
+SECTION HEADERS — output exactly these when you see a section boundary:
+צד א | צד ב | צד ג | שיקום | ניטור
+
+IMPORTANT RULES:
+1. Every patient must appear under a section header. If no header visible, use צד א.
+2. Keep ALL patients — do not skip low-confidence rows.
+3. If a cell is handwritten and unclear, transcribe your best guess followed by (?) — e.g. "לבנת(?) שרה"
+4. DNR/DNI/NPO may appear in any column — extract them as flags regardless of position.
+5. Tasks often appear in the "תורן" or "מחר" column — treat them as tasks.
+6. "משתחרר" or "לשחרר" in any field → add to status_notes segment.
+7. Do NOT add any text, headers, explanations, or markdown. Output ONLY the structured lines.
+
+EXAMPLE OUTPUT:
+צד א
+57/1 כהן יוסף 78 CHF DNR | בצקת רגליים, O2 2L | שקילה בבוקר, בדיקת אשלגן
+49-3 לוי שרה 84 דלקת ריאות | חום 38.2 | תרבית דם, א.ק.ג
+ניטור
+ניטור 1 אבו סאלם מחמד 71 AKI SEPSIS | קריאטינין עולה | בדיקת דם דחוף, מעקב I&O`;
 
 async function runClaudeOCR(file: File, apiKey: string): Promise<string> {
   const base64 = await fileToBase64(file);
@@ -52,8 +69,8 @@ async function runClaudeOCR(file: File, apiKey: string): Promise<string> {
       "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
-      model: "claude-opus-4-5",
-      max_tokens: 2048,
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
       messages: [
         {
           role: "user",
